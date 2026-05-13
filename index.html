@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pixel Jumper Turbo</title>
+    <title>Pixel Jumper Turbo - Level Edition</title>
     <style>
         :root { --primary: #3498db; --bg: #2980b9; }
         body { margin: 0; overflow: hidden; background: #1a1a2e; font-family: 'Arial Black', sans-serif; }
         canvas { display: block; touch-action: none; }
         
         #ui-layer { position: fixed; top: 20px; left: 20px; pointer-events: none; color: white; z-index: 5; }
-        .stats { font-size: 24px; text-shadow: 3px 3px 0px #2c3e50; }
+        .stats { font-size: 24px; text-shadow: 3px 3px 0px #2c3e50; display: flex; gap: 20px; }
+        .stat-box { background: rgba(0,0,0,0.3); padding: 5px 15px; border-radius: 10px; }
         
         #overlay { 
             position: fixed; inset: 0; background: rgba(26, 26, 46, 0.9); 
@@ -42,7 +43,11 @@
 <body>
 
 <div id="ui-layer">
-    <div class="stats">SCORE: <span id="score-val">0</span></div>
+    <div class="stats">
+        <div class="stat-box">LVL: <span id="lvl-val">1</span></div>
+        <div class="stat-box">COINS: <span id="coin-val">0</span>/30</div>
+        <div class="stat-box">LIVES: <span id="life-val">3</span></div>
+    </div>
 </div>
 
 <div id="overlay">
@@ -82,7 +87,16 @@ function playNote(freq, type, duration, volume, startTime) {
 function playJumpSound() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     playNote(150 + Math.random() * 50, 'square', 0.2, 0.1, audioCtx.currentTime);
-    playNote(300 + Math.random() * 100, 'square', 0.15, 0.05, audioCtx.currentTime + 0.05);
+}
+
+function playCoinSound() {
+    playNote(987.77, 'square', 0.1, 0.1, audioCtx.currentTime);
+    playNote(1318.51, 'square', 0.2, 0.1, audioCtx.currentTime + 0.05);
+}
+
+function playLifeUpSound() {
+    const now = audioCtx.currentTime;
+    [523, 659, 783, 1046].forEach((f, i) => playNote(f, 'square', 0.3, 0.1, now + i*0.1));
 }
 
 function playLandSound() {
@@ -91,38 +105,26 @@ function playLandSound() {
 
 function startMusic() {
     if (bgmInterval) clearInterval(bgmInterval);
-    const melody = [
-        261, 0, 293, 329, 261, 0, 293, 329,
-        349, 349, 329, 329, 293, 0, 261, 0,
-        392, 0, 349, 329, 392, 0, 349, 329,
-        293, 293, 329, 261, 196, 220, 246, 261
-    ];
+    const melody = [261, 0, 293, 329, 261, 0, 293, 329, 349, 349, 329, 329, 293, 0, 261, 0];
     let step = 0;
     bgmInterval = setInterval(() => {
         if (gameState !== 'PLAYING') return;
         const freq = melody[step % melody.length];
-        if (freq > 0) {
-            playNote(freq, 'triangle', 0.2, 0.05, audioCtx.currentTime);
-            // Basse simple sur le premier temps
-            if (step % 4 === 0) playNote(freq/2, 'sine', 0.4, 0.03, audioCtx.currentTime);
-        }
+        if (freq > 0) playNote(freq, 'triangle', 0.2, 0.03, audioCtx.currentTime);
         step++;
-    }, 150);
+    }, 180);
 }
 
 // --- GAME LOGIC ---
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let gameState = 'MENU';
-let score = 0;
+let coins = 0;
+let lives = 3;
+let currentLevel = 1;
 let camX = 0;
 
-const config = {
-    gravity: 0.8,
-    friction: 0.8,
-    speed: 8,
-    jump: -18
-};
+const config = { gravity: 0.8, friction: 0.8, speed: 8, jump: -18 };
 
 class Particle {
     constructor(x, y, color) {
@@ -132,38 +134,24 @@ class Particle {
         this.life = 1.0;
         this.color = color;
     }
-    update() {
-        this.x += this.vx; this.y += this.vy;
-        this.life -= 0.05;
-    }
+    update() { this.x += this.vx; this.y += this.vy; this.life -= 0.05; }
 }
 
 class Player {
-    constructor() {
-        this.w = 40; this.h = 40;
-        this.reset();
-    }
+    constructor() { this.w = 40; this.h = 40; this.reset(); }
     reset() {
         this.x = 100; this.y = 200;
         this.vx = 0; this.vy = 0;
         this.onGround = false;
-        this.dir = 1;
-        this.stretch = 1; 
-        this.squish = 1;  
+        this.dir = 1; this.stretch = 1; this.squish = 1;  
     }
     draw() {
         ctx.save();
         ctx.translate(this.x + this.w/2 - camX, this.y + this.h/2);
         ctx.scale(this.dir * this.stretch, this.squish);
-        const grd = ctx.createLinearGradient(-this.w/2, -this.h/2, this.w/2, this.h/2);
-        grd.addColorStop(0, "#3498db");
-        grd.addColorStop(1, "#2980b9");
-        ctx.fillStyle = grd;
+        ctx.fillStyle = "#3498db";
         ctx.fillRect(-this.w/2, -this.h/2, this.w, this.h);
-        ctx.fillStyle = "white";
-        ctx.fillRect(5, -10, 10, 10);
-        ctx.fillStyle = "#2c3e50";
-        ctx.fillRect(10, -7, 5, 5);
+        ctx.fillStyle = "white"; ctx.fillRect(5, -10, 10, 10);
         ctx.restore();
     }
     update() {
@@ -177,44 +165,57 @@ class Level {
         this.platforms = [];
         this.clouds = [];
         this.particles = [];
+        this.coins = [];
         this.goal = { x: 0, y: 0 };
     }
-    generate() {
+    generate(lvl) {
         this.platforms = [];
         this.clouds = [];
+        this.coins = [];
         let curX = 0;
         let curY = window.innerHeight - 150;
         this.platforms.push({ x: 0, y: curY, w: 500, h: 600 });
-        for(let i=0; i<15; i++) {
-            curX += 250 + Math.random() * 100;
-            curY += (Math.random() - 0.5) * 200;
+        
+        const numPlatforms = 10 + lvl * 2;
+        for(let i=0; i < numPlatforms; i++) {
+            curX += 200 + Math.random() * 150;
+            curY += (Math.random() - 0.5) * 250;
             curY = Math.max(200, Math.min(window.innerHeight - 100, curY));
-            this.platforms.push({ x: curX, y: curY, w: 150 + Math.random() * 100, h: 600 });
-            this.clouds.push({
-                x: curX + Math.random() * 400,
-                y: Math.random() * 200,
-                s: 0.2 + Math.random() * 0.5
-            });
+            let w = 120 + Math.random() * 100;
+            this.platforms.push({ x: curX, y: curY, w: w, h: 600 });
+            
+            // Add coins on platforms
+            if(Math.random() > 0.3) {
+                this.coins.push({ x: curX + w/2, y: curY - 40, collected: false, anim: Math.random() * Math.PI });
+            }
+            
+            this.clouds.push({ x: curX + Math.random() * 400, y: Math.random() * 200, s: 0.2 + Math.random() * 0.5 });
         }
         const last = this.platforms[this.platforms.length - 1];
         this.goal = { x: last.x + 50, y: last.y - 100 };
     }
     draw() {
-        ctx.fillStyle = "rgba(255,255,255,0.1)";
         this.clouds.forEach(c => {
-            ctx.beginPath();
-            ctx.arc(c.x - camX * c.s, c.y, 40, 0, Math.PI * 2);
-            ctx.arc(c.x + 30 - camX * c.s, c.y + 10, 30, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillStyle = "rgba(255,255,255,0.1)";
+            ctx.beginPath(); ctx.arc(c.x - camX * c.s, c.y, 40, 0, Math.PI * 2); ctx.fill();
         });
         this.platforms.forEach(p => {
-            ctx.fillStyle = "rgba(0,0,0,0.2)";
-            ctx.fillRect(p.x - camX + 10, p.y + 10, p.w, p.h);
-            ctx.fillStyle = "#2c3e50";
-            ctx.fillRect(p.x - camX, p.y, p.w, p.h);
-            ctx.fillStyle = "#2ecc71";
-            ctx.fillRect(p.x - camX, p.y, p.w, 10);
+            ctx.fillStyle = "#2c3e50"; ctx.fillRect(p.x - camX, p.y, p.w, p.h);
+            ctx.fillStyle = "#2ecc71"; ctx.fillRect(p.x - camX, p.y, p.w, 10);
         });
+        // Draw Coins
+        this.coins.forEach(c => {
+            if(!c.collected) {
+                c.anim += 0.1;
+                let bounce = Math.sin(c.anim) * 5;
+                ctx.fillStyle = "#f1c40f";
+                ctx.beginPath();
+                ctx.ellipse(c.x - camX, c.y + bounce, 12, 18, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = "#d4ac0d"; ctx.lineWidth = 2; ctx.stroke();
+            }
+        });
+        // Goal Flag
         ctx.fillStyle = "#e74c3c";
         ctx.fillRect(this.goal.x - camX, this.goal.y, 10, 100);
         ctx.beginPath();
@@ -222,10 +223,9 @@ class Level {
         ctx.lineTo(this.goal.x - camX + 60, this.goal.y + 25);
         ctx.lineTo(this.goal.x - camX + 10, this.goal.y + 50);
         ctx.fill();
+        
         this.particles.forEach((p, i) => {
-            p.update();
-            ctx.globalAlpha = p.life;
-            ctx.fillStyle = p.color;
+            p.update(); ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
             ctx.fillRect(p.x - camX, p.y, 5, 5);
             if(p.life <= 0) this.particles.splice(i, 1);
         });
@@ -239,14 +239,25 @@ const keys = { left: false, right: false };
 
 function startGame() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    document.getElementById('overlay').style.opacity = '0';
-    setTimeout(() => document.getElementById('overlay').style.display = 'none', 300);
-    score = 0;
-    player.reset();
-    world.generate();
+    document.getElementById('overlay').style.display = 'none';
+    coins = 0; lives = 3; currentLevel = 1;
+    updateUI();
+    resetLevel();
     gameState = 'PLAYING';
     startMusic();
     requestAnimationFrame(loop);
+}
+
+function resetLevel() {
+    player.reset();
+    world.generate(currentLevel);
+    camX = 0;
+}
+
+function updateUI() {
+    document.getElementById('coin-val').innerText = coins;
+    document.getElementById('life-val').innerText = lives;
+    document.getElementById('lvl-val').innerText = currentLevel;
 }
 
 window.onkeydown = e => {
@@ -264,9 +275,7 @@ const btnBind = (id, k) => {
     el.ontouchstart = (e) => { e.preventDefault(); if(k==='jump') jump(); else keys[k]=true; };
     el.ontouchend = () => { if(k!=='jump') keys[k]=false; };
 };
-btnBind('btn-left', 'left');
-btnBind('btn-right', 'right');
-btnBind('btn-jump', 'jump');
+btnBind('btn-left', 'left'); btnBind('btn-right', 'right'); btnBind('btn-jump', 'jump');
 
 function jump() {
     if(player.onGround) {
@@ -274,7 +283,6 @@ function jump() {
         player.vy = config.jump;
         player.onGround = false;
         player.stretch = 0.6; player.squish = 1.4;
-        for(let i=0; i<8; i++) world.particles.push(new Particle(player.x+20, player.y+40, "#fff"));
     }
 }
 
@@ -284,49 +292,62 @@ function update() {
     else if(keys.right) { player.vx = config.speed; player.dir = 1; }
     else { player.vx *= config.friction; }
     player.vy += config.gravity;
-    player.x += player.vx;
-    player.y += player.vy;
+    player.x += player.vx; player.y += player.vy;
     player.update();
+
+    // Platform collision
     let grounded = false;
     world.platforms.forEach(p => {
         if(player.x + player.w > p.x && player.x < p.x + p.w &&
            player.y + player.h > p.y && player.y + player.h < p.y + 50 && player.vy > 0) {
-            if(!player.onGround) { 
-                playLandSound();
-                player.squish = 0.7; player.stretch = 1.3;
-            }
-            player.y = p.y - player.h;
-            player.vy = 0;
-            grounded = true;
+            if(!player.onGround) { playLandSound(); player.squish = 0.7; player.stretch = 1.3; }
+            player.y = p.y - player.h; player.vy = 0; grounded = true;
         }
     });
     player.onGround = grounded;
-    let targetCam = player.x - canvas.width/4;
-    camX += (targetCam - camX) * 0.1;
+
+    // Coin collection
+    world.coins.forEach(c => {
+        if(!c.collected && Math.hypot(player.x + 20 - c.x, player.y + 20 - c.y) < 40) {
+            c.collected = true;
+            coins++;
+            playCoinSound();
+            if(coins >= 30) {
+                coins = 0;
+                lives++;
+                playLifeUpSound();
+            }
+            updateUI();
+        }
+    });
+
+    // Camera
+    camX += (player.x - canvas.width/4 - camX) * 0.1;
+
+    // Goal
     if(player.x > world.goal.x) {
-        gameState = 'MENU';
-        alert("VICTOIRE !");
-        location.reload();
+        currentLevel++;
+        updateUI();
+        resetLevel();
     }
+
+    // Death
     if(player.y > canvas.height + 100) {
-        gameState = 'MENU';
-        document.getElementById('overlay').style.display = 'flex';
-        document.getElementById('overlay').style.opacity = '1';
-        document.querySelector('.title').innerText = "GAME OVER";
+        lives--;
+        updateUI();
+        if(lives <= 0) {
+            gameState = 'MENU';
+            document.getElementById('overlay').style.display = 'flex';
+            document.querySelector('.title').innerText = "GAME OVER";
+        } else {
+            player.reset();
+        }
     }
-    score = Math.max(score, Math.floor(player.x));
-    document.getElementById('score-val').innerText = score;
 }
 
 function loop() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    sky.addColorStop(0, "#1a1a2e");
-    sky.addColorStop(1, "#16213e");
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
     update();
     world.draw();
     player.draw();
